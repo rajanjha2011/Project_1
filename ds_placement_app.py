@@ -1,8 +1,12 @@
+# Importing important Libraries
 import streamlit as st
 import mysql.connector
 from faker import Faker
 import random
 import pandas as pd
+
+st.cache_data.clear()
+
 
 # Page Setup
 
@@ -25,11 +29,13 @@ def connect_database():
 
     try:
         conn = mysql.connector.connect(
-        host="localhost",
-        user="root",
-        password="Rajan@6319",
-        connection_timeout = 5    # 5 seconds timeout 
-        )
+            host="localhost",
+            user="root",
+            password="Rajan@6319",
+            database="placement_db",
+            ssl_disabled=True
+)
+
         cur = conn.cursor()
         cur.execute("CREATE DATABASE IF NOT EXISTS placement_db")
         cur.execute("USE placement_db")
@@ -92,7 +98,7 @@ def create_tables():
     """)
     conn.commit()
 
-create_tables()
+# create_tables()
 
 # Using Faker library
 def insert_fake_data():
@@ -107,6 +113,8 @@ def insert_fake_data():
         batch = f"Batch-{random.randint(1,3)}"
         city = fake.city()
         grad = enroll + 4
+
+        print(name, age, gender, email, phone, enroll, batch, city, grad)
         
         # Insert into Students
         cursor.execute("""
@@ -151,12 +159,25 @@ def insert_fake_data():
     conn.commit()
 
 # Add button to run manually
+# Setup section with safeguard
 
-with st.expander(" Setup Database and Insert Sample Data (Run Only Once)"):
+with st.expander("Setup Database and Insert Sample Data (Run Only Once)"):
     if st.button("Generate Fake Student Data"):
-        create_tables()
-        insert_fake_data()
-        st.success("Database Created and sample data  inserted successfully.")
+        try:
+            conn, cursor = connect_database()
+            create_tables()
+            
+            # Check if data already exists to prevent duplicate insert
+            cursor.execute("SELECT COUNT(*) FROM Students")
+            count = cursor.fetchone()[0]
+            
+            if count == 0:
+                insert_fake_data()
+                st.success("Database created and sample data inserted.")
+            else:
+                st.info("ℹData already exists. No need to insert again.")
+        except Exception as e:
+            st.error(f"Error creating database: {e}")
 
 
 # Filters for eligibility check
@@ -164,7 +185,7 @@ with st.expander(" Setup Database and Insert Sample Data (Run Only Once)"):
 st.header("Filter Eligible Students")
 
 mock_min = st.slider("Mock Interview Score", 0, 10, 5)
-kata_min = st.slider("Minimum CodeKata Problems", 0, 200, 50)
+kata_min = st.slider("Minimum CodeKata Problems Solved", 0, 200, 50)
 mini_min = st.slider("Mini Projects Completed", 0, 5, 1)
 final_min = st.slider("Final Projects Completed", 0, 5, 1)
 score_min = st.slider("Minimum Final Project Score", 0, 100, 60)
@@ -208,3 +229,121 @@ if results:
     st.dataframe(df)
 else:
     st.warning("No students found for the selected criteria.")
+
+
+# Insights Data Analysis Section
+
+st.header("SQL Insights Dashboard")
+
+# 10 SQL Queries for for Candidate Selection
+
+insight_queries = {
+    # Query_1
+    "Top 5 Students Ready for Placement": """
+        SELECT s.name, p.placement_status, p.company_name, p.placement_package
+        FROM Students s
+        JOIN Placement p ON s.student_id = p.student_id
+        WHERE p.placement_status = 'Ready'
+        ORDER BY p.placement_package DESC
+        LIMIT 5;
+    """,
+     # Query_2
+    "Average Programming Performance Per Batch": """
+        SELECT s.course_batch, AVG(pr.problems_solved) AS avg_problems_solved
+        FROM Students s
+        JOIN Programming pr ON s.student_id = pr.student_id
+        GROUP BY s.course_batch;
+    """,
+     # Query_3
+    "Soft Skills Score Distribution": """
+        SELECT s.course_batch,
+               AVG(ss.communication) AS avg_communication,
+               AVG(ss.teamwork) AS avg_teamwork,
+               AVG(ss.presentation) AS avg_presentation,
+               AVG(ss.leadership) AS avg_leadership,
+               AVG(ss.critical_thinking) AS avg_critical_thinking,
+               AVG(ss.interpersonal_skills) AS avg_interpersonal_skills
+        FROM Students s
+        JOIN SoftSkills ss ON s.student_id = ss.student_id
+        GROUP BY s.course_batch;
+    """,
+    # Query_4
+    "Students with Internships but Not Placed": """
+        SELECT s.name, p.internships_completed, p.placement_status
+        FROM Students s
+        JOIN placement p ON s.student_id = p.student_id
+        WHERE p.internships_completed > 0 AND p.placement_status = 'Not Placed';
+    """,
+     # Query_5
+    "Top 5 Students Who Cleared Most Interview Rounds": """
+        SELECT s.name, p.interview_rounds_cleared
+        FROM Students s
+        JOIN placement p ON s.student_id = p.student_id
+        ORDER BY p.interview_rounds_cleared DESC, s.student_id ASC
+        LIMIT 5;
+    """,
+    # Query_6
+    "Number of Students Placed Per Company": """
+        SELECT company_name, COUNT(*) AS total_placed
+        FROM Placement
+        WHERE placement_status = 'Placed'
+        GROUP BY company_name
+        ORDER BY total_placed DESC;
+    """,
+    # Query_7
+    "Students With Low Programming Performance": """
+        SELECT s.name, pr.problems_solved, pr.final_project_score
+        FROM Students s
+        JOIN Programming pr ON s.student_id = pr.student_id
+        WHERE pr.problems_solved < 30 OR pr.final_project_score < 50;
+    """,
+    # Query_8
+    "Average Placement Package per Batch": """
+        SELECT s.course_batch, AVG(p.placement_package) AS avg_package
+        FROM Students s
+        JOIN Placement p ON s.student_id = p.student_id
+        WHERE p.placement_status = 'Placed'
+        GROUP BY s.course_batch;
+    """,
+     # Query_9
+    "Count of Students Meeting All HR Criteria": """
+        SELECT COUNT(*) AS eligible_students
+        FROM Students s
+        JOIN Programming pr ON s.student_id = pr.student_id
+        JOIN SoftSkills ss ON s.student_id = ss.student_id
+        JOIN Placement p ON s.student_id = p.student_id
+        WHERE pr.problems_solved >= 50
+          AND ss.communication >= 75
+          AND ss.teamwork >= 75
+          AND p.mock_interview_score >= 70;
+    """,
+    # Query_10
+    "Top Programming Languages by Student Count": """
+        SELECT language, COUNT(*) AS num_students
+        FROM Programming
+        GROUP BY language
+        ORDER BY num_students DESC;
+    """
+}
+selected_query = st.selectbox("SQL Insight Query Dashboard", list(insight_queries.keys()))
+
+
+# Button to Run the Query
+if st.button("Run Insight Query"):
+    try:
+        query = insight_queries[selected_query]
+        cursor.execute(query)
+        results = cursor.fetchall()
+        columns = [desc[0] for desc in cursor.description]
+        df_insight = pd.DataFrame(results, columns=columns)
+
+        if df_insight.empty:
+            st.warning("No data found for the selected insight.")
+        else:
+            st.success("Query executed successfully!")
+            st.dataframe(df_insight)
+    except Exception as e:
+        st.error(f"Error running insight query: {e}")
+
+
+
