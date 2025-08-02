@@ -1,4 +1,4 @@
-# Project_1
+# Project_1 Placement Eligibity Streamlit App
 Placement Eligibility Streamlit Application
 Student Placement Eligibility App
 This is a beginner-friendly Streamlit web application that helps HR professionals or placement officers filter eligible students for placement based on performance data. It uses fake student data generated with the Faker library and stores it in a MySQL database with interrelated tables.
